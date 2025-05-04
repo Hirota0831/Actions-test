@@ -40,8 +40,7 @@ jobs:
           echo "$mavenBin" >> $env:GITHUB_PATH
 
       - name: Confirm Maven version
-        run: |
-          mvn -v
+        run: mvn -v
 
       - name: Detect changed modules
         id: detect
@@ -60,8 +59,8 @@ jobs:
             }
           }
           $modules = $includes -join ' '
-          echo "modules=$modules" >> $env:GITHUB_OUTPUT
           Write-Host "📦 Final MODULES: $modules"
+          "`modules=$modules`" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Set SONAR_PROJECT_KEY from repo and branch
         run: |
