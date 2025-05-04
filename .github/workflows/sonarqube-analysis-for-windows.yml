@@ -1,4 +1,4 @@
-name: Selective Build and Analyze with SonarQube (Windows, fixed output)
+name: Selective Build and Analyze with SonarQube (Windows with Git Bash)
 
 on:
   push:
