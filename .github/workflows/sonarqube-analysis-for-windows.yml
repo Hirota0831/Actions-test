@@ -11,6 +11,12 @@ on:
 jobs:
   selective-analysis:
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: powershell
+
+    env:
+      MAVEN_VERSION: 3.6.2
 
     steps:
       - name: Checkout source
@@ -22,17 +28,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Add Maven to PATH (assumes pre-installed Maven 3.6.2)
+      - name: Confirm Maven version
         run: |
-          echo "PATH=$Env:PATH"  # debug用
-          mvn -v                # Maven確認
+          mvn -v
+          Write-Host "Using Maven version: $env:MAVEN_VERSION"
 
       - name: Detect changed modules
         id: detect
         run: |
           git fetch origin $env:GITHUB_EVENT_BEFORE
           Write-Host "🔍 Comparing $env:GITHUB_EVENT_BEFORE → $env:GITHUB_SHA"
-          $changed = git diff --name-only $env:GITHUB_EVENT_BEFORE $env:GITHUB_SHA | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique
+          $changed = git diff --name-only $env:GITHUB_EVENT_BEFORE $env:GITHUB_SHA |
+                     ForEach-Object { ($_ -split '/')[0] } |
+                     Sort-Object -Unique
           Write-Host "🔍 Changed dirs (raw): $changed"
           $includes = @()
           foreach ($dir in $changed) {
@@ -42,7 +50,7 @@ jobs:
             }
           }
           $modules = $includes -join ' '
-          Write-Output "modules=$modules" >> $env:GITHUB_OUTPUT
+          "modules=$modules" >> $env:GITHUB_OUTPUT
           Write-Host "📦 Final MODULES: $modules"
 
       - name: Set SONAR_PROJECT_KEY from repo and branch
@@ -52,8 +60,8 @@ jobs:
           $repoName = $repo.Split('/')[-1]
           $normalizedBranch = $branch -replace '[^a-zA-Z0-9._-]', '-'
           $sonarKey = "$repoName-$normalizedBranch"
-          echo "SONAR_PROJECT_KEY=$sonarKey" >> $env:GITHUB_ENV
-          echo "SONAR_PROJECT_NAME=$sonarKey" >> $env:GITHUB_ENV
+          "SONAR_PROJECT_KEY=$sonarKey" >> $env:GITHUB_ENV
+          "SONAR_PROJECT_NAME=$sonarKey" >> $env:GITHUB_ENV
           Write-Host "🔑 Sonar project key: $sonarKey"
 
       - name: Build & Analyze only changed modules
