@@ -50,7 +50,7 @@ jobs:
             }
           }
           $modules = $includes -join ' '
-          "modules=$modules" >> $env:GITHUB_OUTPUT
+          echo "modules=$modules" >> $env:GITHUB_OUTPUT
           Write-Host "📦 Final MODULES: $modules"
 
       - name: Set SONAR_PROJECT_KEY from repo and branch
@@ -60,12 +60,12 @@ jobs:
           $repoName = $repo.Split('/')[-1]
           $normalizedBranch = $branch -replace '[^a-zA-Z0-9._-]', '-'
           $sonarKey = "$repoName-$normalizedBranch"
-          "SONAR_PROJECT_KEY=$sonarKey" >> $env:GITHUB_ENV
-          "SONAR_PROJECT_NAME=$sonarKey" >> $env:GITHUB_ENV
+          echo "SONAR_PROJECT_KEY=$sonarKey" >> $env:GITHUB_ENV
+          echo "SONAR_PROJECT_NAME=$sonarKey" >> $env:GITHUB_ENV
           Write-Host "🔑 Sonar project key: $sonarKey"
 
       - name: Build & Analyze only changed modules
-        if: steps.detect.outputs.modules -ne ''
+        if: steps.detect.outputs.modules != ''
         run: |
           $modules = "${{ steps.detect.outputs.modules }}".Split(' ')
           foreach ($module in $modules) {
