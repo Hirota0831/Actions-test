@@ -1,4 +1,4 @@
-name: Selective Build and Analyze with SonarQube (Windows, Maven auto-install)
+name: Selective Build and Analyze with SonarQube (Windows, robust version)
 
 on:
   push:
@@ -29,15 +29,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $mavenUrl = "https://archive.apache.org/dist/maven/maven-3/3.6.2/binaries/apache-maven-3.6.2-bin.zip"
-          $zipPath = "$env:RUNNER_TEMP\maven.zip"
-          $mavenDir = "$env:RUNNER_TEMP\maven"
-
+          $zipPath = "$env:RUNNER_TEMP\\maven.zip"
+          $mavenDir = "$env:RUNNER_TEMP\\maven"
           Invoke-WebRequest -Uri $mavenUrl -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath $mavenDir
-          $mavenBin = "$mavenDir\apache-maven-3.6.2\bin"
-
-          echo "MAVEN_HOME=$mavenBin" >> $env:GITHUB_ENV
-          echo "$mavenBin" >> $env:GITHUB_PATH
+          $mavenBin = "$mavenDir\\apache-maven-3.6.2\\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $mavenBin
+          Add-Content -Path $env:GITHUB_ENV -Value "MAVEN_HOME=$mavenBin"
 
       - name: Confirm Maven version
         run: mvn -v
@@ -60,18 +58,18 @@ jobs:
           }
           $modules = $includes -join ' '
           Write-Host "📦 Final MODULES: $modules"
-          "`modules=$modules`" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "modules=$modules" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Set SONAR_PROJECT_KEY from repo and branch
         run: |
           $branch = "${{ github.head_ref || github.ref_name }}"
           $repo = "${{ github.repository }}"
-          $repoName = $repo.Split('/')[-1]
+          $repoName = $repo.Split('/')[1]
           $normalizedBranch = $branch -replace '[^a-zA-Z0-9._-]', '-'
           $sonarKey = "$repoName-$normalizedBranch"
-          echo "SONAR_PROJECT_KEY=$sonarKey" >> $env:GITHUB_ENV
-          echo "SONAR_PROJECT_NAME=$sonarKey" >> $env:GITHUB_ENV
           Write-Host "🔑 Sonar project key: $sonarKey"
+          Add-Content -Path $env:GITHUB_ENV -Value "SONAR_PROJECT_KEY=$sonarKey"
+          Add-Content -Path $env:GITHUB_ENV -Value "SONAR_PROJECT_NAME=$sonarKey"
 
       - name: Build & Analyze only changed modules
         if: steps.detect.outputs.modules != ''
@@ -81,12 +79,12 @@ jobs:
             Write-Host "=============================="
             Write-Host "🔨 Building module: $module"
             Write-Host "=============================="
-            mvn -f "$module/pom.xml" clean install -DskipTests
+            mvn -f "$module\\pom.xml" clean install -DskipTests
 
             Write-Host "=============================="
             Write-Host "📊 Sonar analyzing module: $module"
             Write-Host "=============================="
-            mvn -f "$module/pom.xml" sonar:sonar `
+            mvn -f "$module\\pom.xml" sonar:sonar `
               -Dsonar.projectKey=$env:SONAR_PROJECT_KEY `
               -Dsonar.projectName=$env:SONAR_PROJECT_NAME `
               -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} `
