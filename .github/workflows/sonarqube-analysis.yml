@@ -59,3 +59,14 @@ jobs:
           if grep -q "400" status.txt; then
             echo "Project may already exist or bad request. Continuing..."
           fi
+
+      - name: Build with Maven (skip tests)
+        run: mvn clean install -DskipTests
+
+      - name: Run SonarQube Analysis
+        run: |
+          mvn sonar:sonar \
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }} \
+            -Dsonar.projectName=${{ env.SONAR_PROJECT_NAME }} \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
