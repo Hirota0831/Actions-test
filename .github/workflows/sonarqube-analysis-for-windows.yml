@@ -1,4 +1,4 @@
-name: Selective Build and Analyze with SonarQube (Windows)
+name: Selective Build and Analyze with SonarQube (Windows, Maven auto-install)
 
 on:
   push:
@@ -15,9 +15,6 @@ jobs:
       run:
         shell: powershell
 
-    env:
-      MAVEN_VERSION: 3.6.2
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -28,10 +25,23 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Install Maven 3.6.2 manually
+        run: |
+          $ErrorActionPreference = "Stop"
+          $mavenUrl = "https://archive.apache.org/dist/maven/maven-3/3.6.2/binaries/apache-maven-3.6.2-bin.zip"
+          $zipPath = "$env:RUNNER_TEMP\maven.zip"
+          $mavenDir = "$env:RUNNER_TEMP\maven"
+
+          Invoke-WebRequest -Uri $mavenUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $mavenDir
+          $mavenBin = "$mavenDir\apache-maven-3.6.2\bin"
+
+          echo "MAVEN_HOME=$mavenBin" >> $env:GITHUB_ENV
+          echo "$mavenBin" >> $env:GITHUB_PATH
+
       - name: Confirm Maven version
         run: |
           mvn -v
-          Write-Host "Using Maven version: $env:MAVEN_VERSION"
 
       - name: Detect changed modules
         id: detect
