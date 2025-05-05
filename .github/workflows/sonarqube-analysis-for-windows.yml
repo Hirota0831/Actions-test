@@ -1,4 +1,4 @@
-name: Selective Build and Analyze with SonarQube (Windows, safe PowerShell)
+name: Selective Build and Analyze with SonarQube (Windows + PR comment)
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
           }
           $modules = $includes -join ' '
           Write-Host "📦 Final MODULES: $modules"
-          Set-Content -Path $env:GITHUB_OUTPUT -Value "modules=$modules"
+          "modules=$modules" | Set-Content -Path $env:GITHUB_OUTPUT
 
       - name: Set SONAR_PROJECT_KEY from repo and branch
         run: |
@@ -94,3 +94,20 @@ jobs:
               "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" `
               "-Dsonar.login=${{ secrets.SONAR_TOKEN }}"
           }
+
+      - name: Post SonarQube result to PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const repo = context.repo.repo;
+            const branch = context.payload.pull_request.head.ref.replace(/[^a-zA-Z0-9._-]/g, '-');
+            const sonarUrl = `${{ secrets.SONAR_HOST_URL }}/dashboard?id=${repo}-${branch}`;
+
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: prNumber,
+              body: `🔍 **SonarQube Analysis Completed**\n\n🔗 [View analysis results](${sonarUrl})`
+            });
