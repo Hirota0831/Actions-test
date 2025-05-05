@@ -21,7 +21,7 @@ jobs:
         shell: powershell
 
     steps:
-      - name: Checkout source with full history
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -34,7 +34,6 @@ jobs:
 
       - name: Install Maven 3.6.2 manually
         run: |
-          $ErrorActionPreference = "Stop"
           $mavenUrl = "https://archive.apache.org/dist/maven/maven-3/3.6.2/binaries/apache-maven-3.6.2-bin.zip"
           $zipPath = "$env:RUNNER_TEMP\\maven.zip"
           $mavenDir = "$env:RUNNER_TEMP\\maven"
@@ -44,39 +43,29 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $mavenBin
           Add-Content -Path $env:GITHUB_ENV -Value "MAVEN_HOME=$mavenBin"
 
-      - name: Confirm Maven version
-        run: mvn -v
-
       - name: Detect changed modules
         id: detect
         run: |
-          $before = "${{ github.event.before }}"
-          $after = "${{ github.sha }}"
-          git fetch origin $before $after
-          Write-Host "🔍 Comparing $before → $after"
-          $changed = git diff --name-only $before $after |
-                     ForEach-Object { ($_ -split '/')[0] } |
-                     Sort-Object -Unique
-          Write-Host "🔍 Changed dirs (raw): $changed"
+          git fetch origin ${{ github.event.before }} ${{ github.sha }}
+          $changed = git diff --name-only ${{ github.event.before }} ${{ github.sha }} |
+            ForEach-Object { ($_ -split '/')[0] } |
+            Sort-Object -Unique
           $includes = @()
           foreach ($dir in $changed) {
             if ($dir -in @("simple-maven-project", "A-project", "B-project")) {
-              Write-Host "✅ $dir is a recognized module"
               $includes += $dir
             }
           }
           $modules = $includes -join ' '
-          Write-Host "📦 Final MODULES: $modules"
-          "modules=$modules" | Set-Content -Path $env:GITHUB_OUTPUT
+          "modules=$modules" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
-      - name: Set SONAR_PROJECT_KEY from repo and branch
+      - name: Set SONAR_PROJECT_KEY
         run: |
           $branch = "${{ github.head_ref || github.ref_name }}"
           $repo = "${{ github.repository }}"
           $repoName = $repo.Split('/')[1]
           $normalizedBranch = $branch -replace '[^a-zA-Z0-9._-]', '-'
           $sonarKey = "$repoName-$normalizedBranch"
-          Write-Host "🔑 Sonar project key: $sonarKey"
           Add-Content -Path $env:GITHUB_ENV -Value "SONAR_PROJECT_KEY=$sonarKey"
           Add-Content -Path $env:GITHUB_ENV -Value "SONAR_PROJECT_NAME=$sonarKey"
 
@@ -85,14 +74,7 @@ jobs:
         run: |
           $modules = "${{ steps.detect.outputs.modules }}".Split(' ')
           foreach ($module in $modules) {
-            Write-Host "=============================="
-            Write-Host "🔨 Building module: $module"
-            Write-Host "=============================="
             mvn -f "$module\\pom.xml" clean install -DskipTests
-
-            Write-Host "=============================="
-            Write-Host "📊 Sonar analyzing module: $module"
-            Write-Host "=============================="
             mvn -f "$module\\pom.xml" sonar:sonar `
               "-Dsonar.projectKey=$env:SONAR_PROJECT_KEY" `
               "-Dsonar.projectName=$env:SONAR_PROJECT_NAME" `
@@ -100,7 +82,7 @@ jobs:
               "-Dsonar.login=${{ secrets.SONAR_TOKEN }}"
           }
 
-      - name: Post SonarQube result to PR comment
+      - name: Post or update SonarQube result comment with summary
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
@@ -108,11 +90,59 @@ jobs:
           script: |
             const prNumber = context.payload.pull_request.number;
             const repo = context.repo.repo;
+            const owner = context.repo.owner;
             const branch = context.payload.pull_request.head.ref.replace(/[^a-zA-Z0-9._-]/g, '-');
-            const sonarUrl = `${{ secrets.SONAR_HOST_URL }}/dashboard?id=${repo}-${branch}`;
+            const sonarProject = `${repo}-${branch}`;
+            const sonarHost = `${{ secrets.SONAR_HOST_URL }}`;
+            const sonarToken = `${{ secrets.SONAR_TOKEN }}`;
+            const sonarUrl = `${sonarHost}/dashboard?id=${sonarProject}`;
+            const tag = '<!-- sonar-comment -->';
+            const apiUrl = `${sonarHost}/api/measures/component?component=${sonarProject}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density`;
 
-            await github.rest.issues.createComment({
-              ...context.repo,
+            let summaryText = '';
+            try {
+              const res = await fetch(apiUrl, {
+                headers: {
+                  Authorization: `Basic ${Buffer.from(sonarToken + ':').toString('base64')}`
+                }
+              });
+              const data = await res.json();
+              const measures = data.component.measures;
+              const lookup = Object.fromEntries(measures.map(m => [m.metric, m.value]));
+              summaryText = `
+                🔍 **SonarQube Analysis Completed**
+              - 🐞 Bugs: ${lookup.bugs ?? 'N/A'}
+              - 🛡️ Vulnerabilities: ${lookup.vulnerabilities ?? 'N/A'}
+              - 🧹 Code Smells: ${lookup.code_smells ?? 'N/A'}
+              - 📊 Coverage: ${lookup.coverage ?? 'N/A'}%
+              - ♻️ Duplication: ${lookup.duplicated_lines_density ?? 'N/A'}%
+                
+                🔗 [View analysis results](${sonarUrl})`;
+                } catch (e) {
+                summaryText = `🔍 **SonarQube Analysis Completed**\n\n🔗 [View results](${sonarUrl})\n⚠️ Summary fetch failed`;
+                }
+                
+                const comments = await github.rest.issues.listComments({
+                owner,
+                repo,
+              issue_number: prNumber
+              });
+                
+                const existing = comments.data.find(c => c.body.includes(tag));
+                const body = `${tag}\n${summaryText}`;
+                
+                if (existing) {
+                await github.rest.issues.updateComment({
+                owner,
+                repo,
+              comment_id: existing.id,
+                body
+              });
+              } else {
+                await github.rest.issues.createComment({
+                owner,
+                repo,
               issue_number: prNumber,
-              body: `🔍 **SonarQube Analysis Completed**\n\n🔗 [View analysis results](${sonarUrl})`
-            });
+                body
+              });
+              }
